@@ -10,9 +10,18 @@
 using namespace std;
 
 GLFWwindow* g_window;
+int screen_width = 800, screen_height = 600;
+
+GLfloat lastX = screen_width / 2.0f, lastY = screen_height / 2.0f;
+GLfloat yaw = -90.0f, pitch = 0.0f;
+bool firstMouse = true;
 
 GLuint g_shaderProgram;
 GLint g_uMVP;
+GLint g_uMV;
+GLint g_uN;
+
+chrono::time_point<chrono::system_clock> g_callTime;
 
 class Model
 {
@@ -24,6 +33,14 @@ public:
 };
 
 Model g_model;
+
+bool keys[1024];
+
+Matrix4 g_P = createPerspectiveProjectionMatrix(100.0f, 0.01f, 40.0f, screen_width, screen_height);
+
+Vector3 cameraPos = Vector3(0.0f, 0.0f, 30.0f);
+Vector3 cameraFront = Vector3(0.0f, 0.0f, -1.0f);
+Vector3 cameraUp = Vector3(0.0f, 1.0f, 0.0f);
 
 GLuint createShader(const GLchar* code, GLenum type)
 {
@@ -89,29 +106,45 @@ bool createShaderProgram()
         "#version 330\n"
         ""
         "layout(location = 0) in vec3 a_position;"
-        "layout(location = 1) in vec3 a_color;"
+        "layout(location = 1) in vec3 a_normal;"
         ""
         "uniform mat4 u_mvp;"
+        "uniform mat4 u_mv;"
+        "uniform mat3 u_n;"
         ""
-        "out vec3 v_color;"
+        "out vec3 v_normal;"
+        "out vec3 v_position;"
         ""
         "void main()"
         "{"
-        "    v_color = a_color;"
-        "    gl_Position = u_mvp * vec4(a_position, 1.0);"
+        "   vec4 p0 = vec4(a_position, 1.0);"
+        "   v_normal = transpose(inverse(u_n)) * normalize(a_normal);"
+        "   v_position = vec3(u_mv * p0);"
+        "   gl_Position = u_mvp * p0;"
         "}"
         ;
 
     const GLchar fsh[] =
         "#version 330\n"
         ""
-        "in vec3 v_color;"
+        "in vec3 v_normal;"
+        "in vec3 v_position;"
         ""
         "layout(location = 0) out vec4 o_color;"
         ""
         "void main()"
         "{"
-        "   o_color = vec4(v_color, 1.0);"
+        "   vec3 color = vec3(0.23, 0.75, 0.21);"
+        ""
+        "   vec3 E = vec3(0.0, 0.0, 0.0);"
+        "   vec3 L = vec3(5.0, 5.0, 0.0);"
+        ""
+        "   vec3 n = normalize(v_normal);"
+        "   vec3 l = normalize(L - v_position);"
+        ""
+        "   float d = max(dot(n, l), 0.1);"
+        ""
+        "   o_color = vec4(color * d, 1.0);"
         "}"
         ;
 
@@ -123,6 +156,8 @@ bool createShaderProgram()
     g_shaderProgram = createProgram(vertexShader, fragmentShader);
 
     g_uMVP = glGetUniformLocation(g_shaderProgram, "u_mvp");
+    g_uMV = glGetUniformLocation(g_shaderProgram, "u_mv");
+    g_uN = glGetUniformLocation(g_shaderProgram, "u_n");
 
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
@@ -134,35 +169,35 @@ bool createModel()
 {
     const GLfloat vertices[] =
     {
-        -1.0, -1.0, 1.0, 1.0, 0.0, 0.0,
-        1.0, -1.0, 1.0, 1.0, 0.0, 0.0,
-        1.0, 1.0, 1.0, 1.0, 0.0, 0.0,
-        -1.0, 1.0, 1.0, 1.0, 0.0, 0.0,
+        -1.0, -1.0, 1.0, 0.0, 0.0, 1.0, // 0
+        1.0, -1.0, 1.0, 0.0, 0.0, 1.0, // 1
+        1.0, 1.0, 1.0, 0.0, 0.0, 1.0, // 2
+        -1.0, 1.0, 1.0, 0.0, 0.0, 1.0, // 3
 
-        1.0, -1.0, 1.0, 1.0, 1.0, 0.0,
-        1.0, -1.0, -1.0, 1.0, 1.0, 0.0,
-        1.0, 1.0, -1.0, 1.0, 1.0, 0.0,
-        1.0, 1.0, 1.0, 1.0, 1.0, 0.0,
+        1.0, -1.0, 1.0, 1.0, 0.0, 0.0, // 4
+        1.0, -1.0, -1.0, 1.0, 0.0, 0.0, // 5
+        1.0, 1.0, -1.0, 1.0, 0.0, 0.0, // 6
+        1.0, 1.0, 1.0, 1.0, 0.0, 0.0, // 7
 
-        1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
-        1.0, 1.0, -1.0, 1.0, 0.0, 1.0,
-        -1.0, 1.0, -1.0, 1.0, 0.0, 1.0,
-        -1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
+        1.0, 1.0, 1.0, 0.0, 1.0, 0.0, // 8
+        1.0, 1.0, -1.0, 0.0, 1.0, 0.0, // 9
+        -1.0, 1.0, -1.0, 0.0, 1.0, 0.0, // 10
+        -1.0, 1.0, 1.0, 0.0, 1.0, 0.0, // 11
 
-        -1.0, 1.0, 1.0, 0.0, 1.0, 1.0,
-        -1.0, 1.0, -1.0, 0.0, 1.0, 1.0,
-        -1.0, -1.0, -1.0, 0.0, 1.0, 1.0,
-        -1.0, -1.0, 1.0, 0.0, 1.0, 1.0,
+        -1.0, 1.0, 1.0, -1.0, 0.0, 0.0, // 12
+        -1.0, 1.0, -1.0, -1.0, 0.0, 0.0, // 13
+        -1.0, -1.0, -1.0, -1.0, 0.0, 0.0, // 14
+        -1.0, -1.0, 1.0, -1.0, 0.0, 0.0, // 15
 
-        -1.0, -1.0, 1.0, 0.0, 1.0, 0.0,
-        -1.0, -1.0, -1.0, 0.0, 1.0, 0.0,
-        1.0, -1.0, -1.0, 0.0, 1.0, 0.0,
-        1.0, -1.0, 1.0, 0.0, 1.0, 0.0,
+        -1.0, -1.0, 1.0, 0.0, -1.0, 0.0, // 16
+        -1.0, -1.0, -1.0, 0.0, -1.0, 0.0, // 17
+        1.0, -1.0, -1.0, 0.0, -1.0, 0.0, // 18
+        1.0, -1.0, 1.0, 0.0, -1.0, 0.0, // 19
 
-        -1.0, -1.0, -1.0, 0.0, 0.0, 1.0,
-        -1.0, 1.0, -1.0, 0.0, 0.0, 1.0,
-        1.0, 1.0, -1.0, 0.0, 0.0, 1.0,
-        1.0, -1.0, -1.0, 0.0, 0.0, 1.0,
+        -1.0, -1.0, -1.0, 0.0, 0.0, -1.0, // 20
+        -1.0, 1.0, -1.0, 0.0, 0.0, -1.0, // 21
+        1.0, 1.0, -1.0, 0.0, 0.0, -1.0, // 22
+        1.0, -1.0, -1.0, 0.0, 0.0, -1.0, // 23
     };
 
     const GLuint indices[] =
@@ -199,7 +234,7 @@ bool createModel()
 bool init()
 {
     // Set initial color of color buffer to white.
-    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
 
     glEnable(GL_DEPTH_TEST);
 
@@ -209,25 +244,35 @@ bool init()
 void reshape(GLFWwindow* window, int width, int height)
 {
     glViewport(0, 0, width, height);
+    g_P = createPerspectiveProjectionMatrix(100.0f, 0.01f, 40.0f, width, height);
 }
 
-void draw()
+void draw(double deltaTime)
 {
+    static float radius = 12.0;
+
     // Clear color buffer.
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glUseProgram(g_shaderProgram);
     glBindVertexArray(g_model.vao);
 
-    const GLfloat mvp[] =
-    {
-        1.708748f, -1.478188f, -0.360884f, -0.353738f,
-        0.000000f, 1.208897f, -0.883250f, -0.865760f,
-        -1.707388f, -1.479366f, -0.361171f, -0.354019f,
-        0.000000f, 0.000000f, 4.898990f, 5.000000f
-    };
+    float time = glfwGetTime();
 
-    glUniformMatrix4fv(g_uMVP, 1, GL_FALSE, mvp);
+    Matrix4 M = createRotateZMatrix(45.0f) * createTranslateMatrix(cos(time) * radius, 0.0f, sin(time) * radius) *
+        createRotateXMatrix(time * 30.0f) *
+        createRotateZMatrix(time * 30.0f) *
+        createScaleMatrix(1.5f, 1.5f, 1.5f);
+
+    Matrix4 V = createLookAtMatrix(cameraPos, cameraPos + cameraFront, cameraUp);
+
+    Matrix4 MV = V * M;
+    Matrix4 MVP = g_P * MV;
+    Matrix3 N = getMainMinor(MV);
+
+    glUniformMatrix4fv(g_uMVP, 1, GL_FALSE, MVP.getTransposedElements());
+    glUniformMatrix4fv(g_uMV, 1, GL_FALSE, MV.getTransposedElements());
+    glUniformMatrix3fv(g_uN, 1, GL_FALSE, N.getTransposedElements());
 
     glDrawElements(GL_TRIANGLES, g_model.indexCount, GL_UNSIGNED_INT, NULL);
 }
@@ -260,7 +305,7 @@ bool initOpenGL()
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // Create window.
-    g_window = glfwCreateWindow(800, 600, "OpenGL Test", NULL, NULL);
+    g_window = glfwCreateWindow(screen_width, screen_height, "Billboard OpenGL", NULL, NULL);
     if (g_window == NULL)
     {
         cout << "Failed to open GLFW window" << endl;
@@ -296,6 +341,75 @@ void tearDownOpenGL()
     glfwTerminate();
 }
 
+GLfloat to_radians(GLfloat degrees)
+{
+    return PI / 180.0f * degrees;
+}
+
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode)
+{
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+        glfwSetWindowShouldClose(window, GL_TRUE);
+
+    if (action == GLFW_PRESS)
+        keys[key] = true;
+    else if (action == GLFW_RELEASE)
+        keys[key] = false;
+}
+
+void do_movement(double deltaTime)
+{
+    // Camera controls
+    GLfloat cameraSpeed = 5.0f * deltaTime;
+    if (keys[GLFW_KEY_W])
+        cameraPos = cameraPos + cameraSpeed * cameraFront;
+    if (keys[GLFW_KEY_S])
+        cameraPos = cameraPos - cameraSpeed * cameraFront;
+    if (keys[GLFW_KEY_A])
+        cameraPos = cameraPos - Vector3::normalize(Vector3::cross(cameraFront, cameraUp)) * cameraSpeed;
+    if (keys[GLFW_KEY_D])
+        cameraPos = cameraPos + Vector3::normalize(Vector3::cross(cameraFront, cameraUp)) * cameraSpeed;
+    if (keys[GLFW_KEY_Q])
+        cameraPos = cameraPos - cameraUp * cameraSpeed;
+    if (keys[GLFW_KEY_E])
+        cameraPos = cameraPos + cameraUp * cameraSpeed;
+}
+
+void mouse_callback(GLFWwindow* window, double xpos, double ypos)
+{
+    if (firstMouse)
+    {
+        lastX = xpos;
+        lastY = ypos;
+        firstMouse = false;
+    }
+
+    GLfloat xoffset = xpos - lastX;
+    GLfloat yoffset = lastY - ypos; // Обратный порядок вычитания потому что оконные Y-координаты возрастают с верху вниз 
+    lastX = xpos;
+    lastY = ypos;
+
+    GLfloat sensitivity = 0.075f;
+    xoffset *= sensitivity;
+    yoffset *= sensitivity;
+
+    yaw += xoffset;
+    pitch += yoffset;
+
+    if (pitch > 89.0f)
+        pitch = 89.0f;
+    if (pitch < -89.0f)
+        pitch = -89.0f;
+
+    Vector3 front = Vector3(
+        cos(to_radians(yaw)) * cos(to_radians(pitch)),
+        sin(to_radians(pitch)),
+        sin(to_radians(yaw)) * cos(to_radians(pitch))
+    );
+
+    cameraFront = Vector3::normalize(front);
+}
+
 int main()
 {
     // Initialize OpenGL
@@ -307,16 +421,27 @@ int main()
 
     if (isOk)
     {
+        //glfwSetKeyCallback(g_window, key_callback);
+        //glfwSetCursorPosCallback(g_window, mouse_callback);
+        //glfwSetInputMode(g_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        g_callTime = chrono::system_clock::now();
         // Main loop until window closed or escape pressed.
-        while (glfwGetKey(g_window, GLFW_KEY_ESCAPE) != GLFW_PRESS && glfwWindowShouldClose(g_window) == 0)
+        while (!glfwWindowShouldClose(g_window))
         {
+            auto callTime = chrono::system_clock::now();
+            chrono::duration<double> elapsed = callTime - g_callTime;
+            g_callTime = callTime;
+
+            double deltaTime = elapsed.count();
             // Draw scene.
-            draw();
+            draw(deltaTime);
 
             // Swap buffers.
             glfwSwapBuffers(g_window);
             // Poll window events.
             glfwPollEvents();
+
+            do_movement(deltaTime);
         }
     }
 
