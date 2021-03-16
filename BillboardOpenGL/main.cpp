@@ -42,6 +42,80 @@ Vector3 cameraPos = Vector3(0.0f, 0.0f, 30.0f);
 Vector3 cameraFront = Vector3(0.0f, 0.0f, -1.0f);
 Vector3 cameraUp = Vector3(0.0f, 1.0f, 0.0f);
 
+GLuint createShader(const GLchar* code, GLenum type);
+
+GLuint createProgram(GLuint vsh, GLuint fsh);
+
+bool createShaderProgram();
+
+bool createModel();
+
+bool init();
+
+void reshape(GLFWwindow* window, int width, int height);
+
+void draw(double deltaTime);
+
+void cleanup();
+
+bool initOpenGL();
+
+void tearDownOpenGL();
+
+GLfloat to_radians(GLfloat degrees);
+
+GLfloat to_degrees(GLfloat radians);
+
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode);
+
+void do_movement(double deltaTime);
+
+void mouse_callback(GLFWwindow* window, double xpos, double ypos);
+
+int main()
+{
+    // Initialize OpenGL
+    if (!initOpenGL())
+        return -1;
+
+    // Initialize graphical resources.
+    bool isOk = init();
+
+    if (isOk)
+    {
+        glfwSetKeyCallback(g_window, key_callback);
+        glfwSetCursorPosCallback(g_window, mouse_callback);
+        glfwSetInputMode(g_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        g_callTime = chrono::system_clock::now();
+        // Main loop until window closed or escape pressed.
+        while (!glfwWindowShouldClose(g_window))
+        {
+            auto callTime = chrono::system_clock::now();
+            chrono::duration<double> elapsed = callTime - g_callTime;
+            g_callTime = callTime;
+
+            double deltaTime = elapsed.count();
+            // Draw scene.
+            draw(deltaTime);
+
+            // Swap buffers.
+            glfwSwapBuffers(g_window);
+            // Poll window events.
+            glfwPollEvents();
+
+            do_movement(deltaTime);
+        }
+    }
+
+    // Cleanup graphical resources.
+    cleanup();
+
+    // Tear down OpenGL.
+    tearDownOpenGL();
+
+    return isOk ? 0 : -1;
+}
+
 GLuint createShader(const GLchar* code, GLenum type)
 {
     GLuint result = glCreateShader(type);
@@ -250,6 +324,7 @@ void reshape(GLFWwindow* window, int width, int height)
 void draw(double deltaTime)
 {
     static float radius = 12.0;
+    static float rotationAngle = 0.0f;
 
     // Clear color buffer.
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -257,12 +332,14 @@ void draw(double deltaTime)
     glUseProgram(g_shaderProgram);
     glBindVertexArray(g_model.vao);
 
-    float time = glfwGetTime();
+    static Matrix4 initialRotate = createRotateZMatrix(45.0f);
+    static Matrix4 scale = createScaleMatrix(0.75f, 0.75f, 0.75f);
 
-    Matrix4 M = createRotateZMatrix(45.0f) * createTranslateMatrix(cos(time) * radius, 0.0f, sin(time) * radius) *
-        createRotateXMatrix(time * 30.0f) *
-        createRotateZMatrix(time * 30.0f) *
-        createScaleMatrix(1.5f, 1.5f, 1.5f);
+    Matrix4 M = initialRotate * 
+        createTranslateMatrix(cos(rotationAngle) * radius, 0.0f, sin(rotationAngle) * radius) *
+        createRotateXMatrix(to_degrees(rotationAngle)) * 
+        createRotateZMatrix(to_degrees(rotationAngle)) *
+        scale;
 
     Matrix4 V = createLookAtMatrix(cameraPos, cameraPos + cameraFront, cameraUp);
 
@@ -275,6 +352,8 @@ void draw(double deltaTime)
     glUniformMatrix3fv(g_uN, 1, GL_FALSE, N.getTransposedElements());
 
     glDrawElements(GL_TRIANGLES, g_model.indexCount, GL_UNSIGNED_INT, NULL);
+
+    rotationAngle = fmodf(rotationAngle + deltaTime, 2.0f * PI);
 }
 
 void cleanup()
@@ -346,6 +425,11 @@ GLfloat to_radians(GLfloat degrees)
     return PI / 180.0f * degrees;
 }
 
+GLfloat to_degrees(GLfloat radians)
+{
+    return 180.0f / PI * radians;
+}
+
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mode)
 {
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
@@ -393,7 +477,7 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
     xoffset *= sensitivity;
     yoffset *= sensitivity;
 
-    yaw += xoffset;
+    yaw = fmodf(yaw + xoffset, 360.0f);
     pitch += yoffset;
 
     if (pitch > 89.0f)
@@ -408,48 +492,4 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
     );
 
     cameraFront = Vector3::normalize(front);
-}
-
-int main()
-{
-    // Initialize OpenGL
-    if (!initOpenGL())
-        return -1;
-
-    // Initialize graphical resources.
-    bool isOk = init();
-
-    if (isOk)
-    {
-        //glfwSetKeyCallback(g_window, key_callback);
-        //glfwSetCursorPosCallback(g_window, mouse_callback);
-        //glfwSetInputMode(g_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-        g_callTime = chrono::system_clock::now();
-        // Main loop until window closed or escape pressed.
-        while (!glfwWindowShouldClose(g_window))
-        {
-            auto callTime = chrono::system_clock::now();
-            chrono::duration<double> elapsed = callTime - g_callTime;
-            g_callTime = callTime;
-
-            double deltaTime = elapsed.count();
-            // Draw scene.
-            draw(deltaTime);
-
-            // Swap buffers.
-            glfwSwapBuffers(g_window);
-            // Poll window events.
-            glfwPollEvents();
-
-            do_movement(deltaTime);
-        }
-    }
-
-    // Cleanup graphical resources.
-    cleanup();
-
-    // Tear down OpenGL.
-    tearDownOpenGL();
-
-    return isOk ? 0 : -1;
 }
