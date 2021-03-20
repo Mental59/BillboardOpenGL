@@ -72,6 +72,94 @@ void do_movement(double deltaTime);
 
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 
+class BillBoard
+{
+public:
+    Model model;
+    GLuint shaderProgram;
+    GLint uMVP;
+
+    bool createModel()
+    {
+        const GLfloat vertices[] =
+        {
+            -1.0, -1.0, 0.0,
+            1.0, 1.0, 0.0,
+            -1.0, 1.0, 0.0,
+            1.0, -1.0, 0.0
+        };
+
+        const GLint indices[] =
+        {
+            0, 1, 2, 0, 3, 1
+        };
+
+        glGenVertexArrays(1, &this->model.vao);
+        glBindVertexArray(this->model.vao);
+
+        glGenBuffers(1, &this->model.vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, this->model.vbo);
+        glBufferData(GL_ARRAY_BUFFER, 4 * 3 * sizeof(GLfloat), vertices, GL_STATIC_DRAW);
+
+        glGenBuffers(1, &this->model.ibo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this->model.ibo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, 6 * sizeof(GLint), indices, GL_STATIC_DRAW);
+
+        this->model.indexCount = 6;
+
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(GLfloat), (const GLvoid*)0);
+
+        return this->model.vbo != 0 && this->model.ibo != 0 && this->model.vao != 0;
+    }
+
+    bool createShaderProgram()
+    {
+        this->shaderProgram = 0;
+
+        const GLchar vsh[] =
+            "#version 330\n"
+            ""
+            "layout(location = 0) in vec3 a_position;"
+            ""
+            "uniform mat4 u_mvp;"
+            ""
+            "void main()"
+            "{"
+            "    gl_Position = u_mvp * vec4(a_position, 1.0);"
+            "}"
+            ;
+
+        const GLchar fsh[] =
+            "#version 330\n"
+            ""
+            "layout(location = 0) out vec4 o_color;"
+            ""
+            "void main()"
+            "{"
+            "    o_color = vec4(0.0, 1.0, 1.0, 0.3);"
+            "}"
+            ;
+
+        GLuint vertexShader, fragmentShader;
+
+        vertexShader = createShader(vsh, GL_VERTEX_SHADER);
+        fragmentShader = createShader(fsh, GL_FRAGMENT_SHADER);
+
+        this->shaderProgram = createProgram(vertexShader, fragmentShader);
+
+        this->uMVP = glGetUniformLocation(this->shaderProgram, "u_mvp");
+
+        glDeleteShader(vertexShader);
+        glDeleteShader(fragmentShader);
+
+        return this->shaderProgram != 0;
+    }
+
+};
+
+BillBoard billboard;
+
 int main()
 {
     // Initialize OpenGL
@@ -216,7 +304,7 @@ bool createShaderProgram()
         "   vec3 n = normalize(v_normal);"
         "   vec3 l = normalize(L - v_position);"
         ""
-        "   float d = max(dot(n, l), 0.1);"
+        "   float d = max(dot(n, l), 0.3);"
         ""
         "   o_color = vec4(color * d, 1.0);"
         "}"
@@ -305,14 +393,21 @@ bool createModel()
     return g_model.vbo != 0 && g_model.ibo != 0 && g_model.vao != 0;
 }
 
+
+
 bool init()
 {
     // Set initial color of color buffer to white.
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
 
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    return createShaderProgram() && createModel();
+    bool mainShaderProgamCreated = createShaderProgram() && createModel();
+    bool billboardShaderProgramCreated = billboard.createShaderProgram() && billboard.createModel();
+
+    return mainShaderProgamCreated && billboardShaderProgramCreated;
 }
 
 void reshape(GLFWwindow* window, int width, int height)
@@ -323,6 +418,7 @@ void reshape(GLFWwindow* window, int width, int height)
 
 void draw(double deltaTime)
 {
+    // Draw main scene
     static float radius = 12.0;
     static float rotationAngle = 0.0f;
 
@@ -333,11 +429,11 @@ void draw(double deltaTime)
     glBindVertexArray(g_model.vao);
 
     static Matrix4 initialRotate = createRotateZMatrix(45.0f);
-    static Matrix4 scale = createScaleMatrix(0.75f, 0.75f, 0.75f);
+    static Matrix4 scale = createScaleMatrix(1.25f, 1.25f, 1.25f);
 
-    Matrix4 M = initialRotate * 
+    Matrix4 M = initialRotate *
         createTranslateMatrix(cos(rotationAngle) * radius, 0.0f, sin(rotationAngle) * radius) *
-        createRotateXMatrix(to_degrees(rotationAngle)) * 
+        createRotateXMatrix(to_degrees(rotationAngle)) *
         createRotateZMatrix(to_degrees(rotationAngle)) *
         scale;
 
@@ -347,13 +443,30 @@ void draw(double deltaTime)
     Matrix4 MVP = g_P * MV;
     Matrix3 N = getMainMinor(MV);
 
-    glUniformMatrix4fv(g_uMVP, 1, GL_FALSE, MVP.getTransposedElements());
-    glUniformMatrix4fv(g_uMV, 1, GL_FALSE, MV.getTransposedElements());
-    glUniformMatrix3fv(g_uN, 1, GL_FALSE, N.getTransposedElements());
+    glUniformMatrix4fv(g_uMVP, 1, GL_FALSE, MVP.transposed().elements);
+    glUniformMatrix4fv(g_uMV, 1, GL_FALSE, MV.transposed().elements);
+    glUniformMatrix3fv(g_uN, 1, GL_FALSE, N.transposed().elements);
 
     glDrawElements(GL_TRIANGLES, g_model.indexCount, GL_UNSIGNED_INT, NULL);
 
     rotationAngle = fmodf(rotationAngle + deltaTime, 2.0f * PI);
+
+    // Draw billboard
+    glUseProgram(billboard.shaderProgram);
+    glBindVertexArray(billboard.model.vao);
+
+    float d = sqrt(MV[0] * MV[0] + MV[1] * MV[1] + MV[2] * MV[2]) * 1.75f;
+
+    Matrix4 billboardMVP = g_P * Matrix4(
+        d, 0.0f, 0.0f, MV[3],
+        0.0f, d, 0.0f, MV[7],
+        0.0f, 0.0f, d, MV[11],
+        0.0f, 0.0f, 0.0f, 1.0f
+    );
+
+    glUniformMatrix4fv(billboard.uMVP, 1, GL_FALSE, billboardMVP.transposed().elements);
+
+    glDrawElements(GL_TRIANGLES, billboard.model.indexCount, GL_UNSIGNED_INT, NULL);
 }
 
 void cleanup()
@@ -482,7 +595,7 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 
     if (pitch > 89.0f)
         pitch = 89.0f;
-    if (pitch < -89.0f)
+    else if (pitch < -89.0f)
         pitch = -89.0f;
 
     Vector3 front = Vector3(
