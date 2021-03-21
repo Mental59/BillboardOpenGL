@@ -429,13 +429,12 @@ void draw(double deltaTime)
     glBindVertexArray(g_model.vao);
 
     static Matrix4 initialRotate = createRotateZMatrix(45.0f);
-    static Matrix4 scale = createScaleMatrix(1.25f, 1.25f, 1.25f);
+    static Matrix4 scale = createScaleMatrix(1.25f, 1.5f, 0.5f);
 
     Matrix4 M = initialRotate *
         createTranslateMatrix(cos(rotationAngle) * radius, 0.0f, sin(rotationAngle) * radius) *
         createRotateXMatrix(to_degrees(rotationAngle)) *
-        createRotateZMatrix(to_degrees(rotationAngle)) *
-        scale;
+        createRotateZMatrix(to_degrees(rotationAngle)) * scale;
 
     Matrix4 V = createLookAtMatrix(cameraPos, cameraPos + cameraFront, cameraUp);
 
@@ -443,9 +442,9 @@ void draw(double deltaTime)
     Matrix4 MVP = g_P * MV;
     Matrix3 N = getMainMinor(MV);
 
-    glUniformMatrix4fv(g_uMVP, 1, GL_FALSE, MVP.transposed().elements);
-    glUniformMatrix4fv(g_uMV, 1, GL_FALSE, MV.transposed().elements);
-    glUniformMatrix3fv(g_uN, 1, GL_FALSE, N.transposed().elements);
+    glUniformMatrix4fv(g_uMVP, 1, GL_TRUE, MVP.elements);
+    glUniformMatrix4fv(g_uMV, 1, GL_TRUE, MV.elements);
+    glUniformMatrix3fv(g_uN, 1, GL_TRUE, N.elements);
 
     glDrawElements(GL_TRIANGLES, g_model.indexCount, GL_UNSIGNED_INT, NULL);
 
@@ -455,16 +454,19 @@ void draw(double deltaTime)
     glUseProgram(billboard.shaderProgram);
     glBindVertexArray(billboard.model.vao);
 
-    float d = sqrt(MV[0] * MV[0] + MV[1] * MV[1] + MV[2] * MV[2]) * 1.75f;
+    float s[2] = {
+        Vector3(MV[0], MV[4], MV[8]).length() * 1.75f,
+        Vector3(MV[1], MV[5], MV[9]).length() * 1.75f
+    };
 
     Matrix4 billboardMVP = g_P * Matrix4(
-        d, 0.0f, 0.0f, MV[3],
-        0.0f, d, 0.0f, MV[7],
-        0.0f, 0.0f, d, MV[11],
+        s[0], 0.0f, 0.0f, MV[3],
+        0.0f, s[1], 0.0f, MV[7],
+        0.0f, 0.0f, 0.0f, MV[11],
         0.0f, 0.0f, 0.0f, 1.0f
     );
 
-    glUniformMatrix4fv(billboard.uMVP, 1, GL_FALSE, billboardMVP.transposed().elements);
+    glUniformMatrix4fv(billboard.uMVP, 1, GL_TRUE, billboardMVP.elements);
 
     glDrawElements(GL_TRIANGLES, billboard.model.indexCount, GL_UNSIGNED_INT, NULL);
 }
