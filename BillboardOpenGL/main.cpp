@@ -429,7 +429,7 @@ void draw(double deltaTime)
     glBindVertexArray(g_model.vao);
 
     static Matrix4 initialRotate = createRotateZMatrix(45.0f);
-    static Matrix4 scale = createScaleMatrix(1.25f, 1.5f, 0.5f);
+    static Matrix4 scale = createScaleMatrix(1.5f, 1.5f, 0.75f);
 
     Matrix4 M = initialRotate *
         createTranslateMatrix(cos(rotationAngle) * radius, 0.0f, sin(rotationAngle) * radius) *
@@ -454,17 +454,20 @@ void draw(double deltaTime)
     glUseProgram(billboard.shaderProgram);
     glBindVertexArray(billboard.model.vao);
 
-    float s[2] = {
+    float s[3] = {
         Vector3(MV[0], MV[4], MV[8]).length() * 1.75f,
-        Vector3(MV[1], MV[5], MV[9]).length() * 1.75f
+        Vector3(MV[1], MV[5], MV[9]).length() * 1.75f,
+        Vector3(MV[2], MV[6], MV[10]).length() * 1.75f
     };
 
     Matrix4 billboardMVP = g_P * Matrix4(
         s[0], 0.0f, 0.0f, MV[3],
         0.0f, s[1], 0.0f, MV[7],
-        0.0f, 0.0f, 0.0f, MV[11],
+        0.0f, 0.0f, s[2], MV[11],
         0.0f, 0.0f, 0.0f, 1.0f
     );
+
+    billboardMVP.show();
 
     glUniformMatrix4fv(billboard.uMVP, 1, GL_TRUE, billboardMVP.elements);
 
