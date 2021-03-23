@@ -156,6 +156,17 @@ public:
         return this->shaderProgram != 0;
     }
 
+    void cleanup()
+    {
+        if (this->shaderProgram != 0)
+            glDeleteProgram(this->shaderProgram);
+        if (this->model.vbo != 0)
+            glDeleteBuffers(1, &this->model.vbo);
+        if (this->model.ibo != 0)
+            glDeleteBuffers(1, &this->model.ibo);
+        if (this->model.vao != 0)
+            glDeleteVertexArrays(1, &this->model.vao);
+    }
 };
 
 BillBoard billboard;
@@ -467,8 +478,6 @@ void draw(double deltaTime)
         0.0f, 0.0f, 0.0f, 1.0f
     );
 
-    billboardMVP.show();
-
     glUniformMatrix4fv(billboard.uMVP, 1, GL_TRUE, billboardMVP.elements);
 
     glDrawElements(GL_TRIANGLES, billboard.model.indexCount, GL_UNSIGNED_INT, NULL);
@@ -484,6 +493,8 @@ void cleanup()
         glDeleteBuffers(1, &g_model.ibo);
     if (g_model.vao != 0)
         glDeleteVertexArrays(1, &g_model.vao);
+
+    billboard.cleanup();
 }
 
 bool initOpenGL()
